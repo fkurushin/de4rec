@@ -1,15 +1,13 @@
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 import evaluate
 import numpy as np
 import torch
-import transformers
 from tqdm import tqdm
-from transformers import (PretrainedConfig, PreTrainedModel, Trainer,
-                          TrainingArguments)
+from transformers import PretrainedConfig, PreTrainedModel, Trainer, TrainingArguments
 from transformers.modeling_outputs import ModelOutput
 from transformers.trainer_utils import EvalPrediction
 
@@ -233,8 +231,8 @@ class DualEncoderDatasets:
     users: list[tuple[int, str]]
     items: list[tuple[int, str]]
 
-    train_dataset: Optional[ListDataset]
-    eval_dataset: Optional[ListDataset]
+    train_dataset: ListDataset = field(init=False)
+    eval_dataset: ListDataset = field(init=False)
 
     def __post_init__(self):
         self._users_size = len(self.users)
@@ -275,7 +273,7 @@ class DualEncoderDatasets:
     def make_negative_samples(
         self, freq_margin: float = 0.15, neg_per_sample: int = 3
     ) -> list[list[int]]:
-        freq_dist = np.zeros(len(self.items))
+        freq_dist = np.zeros(self._items_size)
 
         for item_ids in self.interactions:
             for item_id in item_ids:
@@ -319,17 +317,19 @@ class DualEncoderDatasets:
 
 class DualEncoderPipeline:
     def __init__(self, **kwargs):
-        self._interactions_path = kwargs.get("interactions_path", "ml-1m/ratings.dat")
+        self._interactions_path = kwargs.get(
+            "interactions_path", "dataset/ml-1m/ratings.dat"
+        )
         assert self._interactions_path
         self._interactions = self.load_list_of_int_int_from_path(
             self._interactions_path
         )
 
-        self._users_path = kwargs.get("users_path", "ml-1m/users.dat")
+        self._users_path = kwargs.get("users_path", "dataset/ml-1m/users.dat")
         assert self._users_path
         self._users = self.load_list_of_int_str_from_path(self._users_path)
 
-        self._items_path = kwargs.get("items_path", "ml-1m/movies.dat")
+        self._items_path = kwargs.get("items_path", "dataset/ml-1m/movies.dat")
         assert self._items_path
         self._items = self.load_list_of_int_str_from_path(self._items_path)
 
@@ -338,24 +338,34 @@ class DualEncoderPipeline:
     def load_list_of_int_int_from_path(
         self, path: str, sep: str = "::"
     ) -> Iterable[tuple[int, int]]:
-        with open(path, "r") as fn:
-            return map(
-                lambda row: tuple(
-                    list(map(lambda el: int(el)), row.strip().split(sep)[:2])
-                ),
-                fn.read().stip().split("\n"),
+        with open(path, "r", encoding="utf-8") as fn:
+            res = list(
+                map(
+                    lambda row: (int(row[0]), int(row[1])),
+                    map(
+                        lambda row: row.strip().split(sep)[:2],
+                        fn.read().strip().split("\n"),
+                    ),
+                )
             )
+        return res
 
     def load_list_of_int_str_from_path(
         self, path: str, sep: str = "::"
     ) -> Iterable[tuple[int, str]]:
-        with open(path, "r") as fn:
-            return map(
-                lambda row: tuple(int(row[0]), " ".join(row[1:])),
-                map(lambda row: row.strip().split(sep), fn.read().strip().split("\n")),
+        with open(path, "r", encoding="latin1") as fn:
+            res = list(
+                map(
+                    lambda row: (int(row[0]), " ".join(row[1:])),
+                    map(
+                        lambda row: row.strip().split(sep),
+                        fn.read().strip().split("\n"),
+                    ),
+                )
             )
+        return res
 
-    def run_default(self):
+    def run_default(self) -> tuple[DualEncoderDatasets, DualEncoderTrainer]:
         datasets = DualEncoderDatasets(
             self._interactions, self._users, self._items, **self._kwargs
         )
@@ -371,11 +381,9 @@ class DualEncoderPipeline:
         )
         trainer.train()
         trainer.save()
+        return datasets, trainer
 
 
 if __name__ == "__main__":
 
-    transformers.logging.set_verbosity_error()
-
-    pipeline = DualEncoderPipeline()
-    pipeline.run_default()
+    pass
