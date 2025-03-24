@@ -48,7 +48,7 @@ test: .test
 build: 
 	rm -f dist/*
 	. .venv/bin/activate && pip install build && python -m build .
-	. .venv/bin/activate && pip install twine && twine upload dist/df4rec*
+	. .venv/bin/activate && pip install twine && twine upload dist/de4rec*
 
 # Cleaning
 
