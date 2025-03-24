@@ -1,0 +1,10 @@
+scikit-learn>=1.6.1
+scipy>=1.15.1
+tokenizers>=0.21.0
+torch>=2.6.0
+tqdm>=4.67.1
+transformers>=4.48.3
+numpy>=2.2.2
+accelerate>=1.6.0
+evaluate>=0.4.3
+scikit-learn>=1.6.1
