@@ -5,6 +5,6 @@ torch>=2.6.0
 tqdm>=4.67.1
 transformers>=4.48.3
 numpy>=2.2.2
-accelerate>=1.6.0
+accelerate>=1.5.1
 evaluate>=0.4.3
 scikit-learn>=1.6.1
