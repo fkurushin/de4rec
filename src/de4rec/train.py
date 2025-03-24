@@ -235,8 +235,8 @@ class DualEncoderDatasets:
     eval_dataset: ListDataset = field(init=False)
 
     def __post_init__(self):
-        self._users_size = len(self.users)
-        self._items_size = len(self.items)
+        self._users_size = max(self.users, key=lambda tu: tu[0])
+        self._items_size = max(self.items, key=lambda tu: tu[0])
 
     @property
     def users_size(self) -> int:
