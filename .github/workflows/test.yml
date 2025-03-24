@@ -1,0 +1,24 @@
+name: test
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    permissions:
+      # IMPORTANT: this permission is mandatory for trusted publishing
+      id-token: write
+    steps:
+    - name: Checkout
+      uses: actions/checkout@main
+    - name: Set up Python
+      uses: actions/setup-python@main
+      with:
+        python-version: '3.x'
+    - name: Install build dependencies
+      run: make install
+    - name: Test
+      run: make test

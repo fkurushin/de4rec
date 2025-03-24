@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 import evaluate
@@ -216,6 +216,12 @@ class DualEncoderTrainer(Trainer):
 
 
 @dataclass
+class DualEncoderSplit:
+    train_dataset: ListDataset
+    eval_dataset: ListDataset
+
+
+@dataclass
 class DualEncoderDatasets:
     """
     Take interactions list : (user_id, item_id) and two lists of user_id to user string representation and item_id to item string representation
@@ -230,13 +236,15 @@ class DualEncoderDatasets:
     interactions: list[tuple[int, int]]
     users: list[tuple[int, str]]
     items: list[tuple[int, str]]
+    freq_margin: float = 0.15
+    neg_per_sample: int = 3
 
-    train_dataset: ListDataset = field(init=False)
-    eval_dataset: ListDataset = field(init=False)
+    #    train_dataset: ListDataset = field(init=False, repr=False)
+    #    eval_dataset: ListDataset = field(init=False, repr=False)
 
     def __post_init__(self):
-        self._users_size = max(self.users, key=lambda tu: tu[0])
-        self._items_size = max(self.items, key=lambda tu: tu[0])
+        self._users_size = max(self.users, key=lambda tu: tu[0])[0] + 1
+        self._items_size = max(self.items, key=lambda tu: tu[0])[0] + 1
 
     @property
     def users_size(self) -> int:
@@ -249,74 +257,101 @@ class DualEncoderDatasets:
     @staticmethod
     def neg_choice(
         freq_dist: np.array,
-        item_ids: list[int],
-        freq_margin: float = 0.15,
-        neg_per_sample: int = 3,
+        pos_item_ids: list[int],
+        freq_margin: float,
+        neg_per_sample: int,
     ) -> list[int]:
         """
-        Choose neg_per_sample times the number of item_ids based on the truncated marginal frequency distribution.
+        Choose neg_per_sample times the number of pos_item_ids based on the truncated marginal frequency distribution.
         --
         Return:
         list of item_ids
         """
         freq_dist_copy = freq_dist.copy()
-        freq_dist_copy[item_ids] = 0
+        pos_item_ids = np.array(list(set(pos_item_ids)))
+        freq_dist_copy[pos_item_ids] = 0
         freq_margin_num = int(len(freq_dist_copy) * freq_margin)
         item_id_to_choice = np.argsort(freq_dist_copy)[-freq_margin_num:]
         freq_dist_copy = freq_dist_copy[item_id_to_choice]
         freq_dist_copy = freq_dist_copy / freq_dist_copy.sum()
-        n_samples = neg_per_sample * len(item_ids)
-        return np.random.choice(
-            item_id_to_choice, size=n_samples, replace=False, p=freq_dist_copy
-        ).tolist()
+        n_samples = neg_per_sample * len(pos_item_ids)
+        try:
+            return np.random.choice(
+                item_id_to_choice, size=n_samples, replace=False, p=freq_dist_copy
+            ).tolist()
+        except:
+            print(item_id_to_choice.shape, n_samples)
+            return [0]*n_samples   
+
+    def make_pos_distributions(
+        self, interactions: list[tuple[int, int]]
+    ) -> tuple[np.array, dict]:
+        freq_dist = np.ones(self.items_size)
+        pos_interactions = {}
+        for user_id, item_id in interactions:
+            freq_dist[item_id] = freq_dist[item_id] + 1
+            pos_interactions[user_id] = pos_interactions.get(user_id, []) + [
+                item_id,
+            ]
+
+        return freq_dist, pos_interactions
 
     def make_negative_samples(
-        self, freq_margin: float = 0.15, neg_per_sample: int = 3
+        self, freq_margin: float, neg_per_sample: int
     ) -> list[list[int]]:
-        freq_dist = np.zeros(self._items_size)
-
-        for item_ids in self.interactions:
-            for item_id in item_ids:
-                freq_dist[item_id] += 1
-
+        freq_dist, pos_interactions = self.make_pos_distributions(self.interactions)
         with ThreadPoolExecutor() as pool:
-            neg_interactions = list(
+            pos_neg_interactions = list(
                 pool.map(
-                    lambda item_ids: DualEncoderDatasets.neg_choice(
-                        freq_dist, item_ids, freq_margin
+                    lambda tup: (
+                        tup[0],
+                        tup[1],
+                        self.neg_choice(freq_dist, tup[1], freq_margin, neg_per_sample),
                     ),
-                    self.interactions,
+                    pos_interactions.items(),
                 )
             )
-        return neg_interactions
+        return pos_neg_interactions
 
     def create_dataset(
-        self, neg_interactions: list[list[int, int]]
+        self, pos_neg_interactions: list[list[int, int]]
     ) -> list[list[int, int, int]]:
         dataset = []
-        for (user_id, pos_item_ids), neg_item_ids in tqdm(
-            zip(self._interactions, neg_interactions)
-        ):
+        for user_id, pos_item_ids, neg_item_ids in tqdm(pos_neg_interactions):
             for pos_item_id, neg_item_id in zip(pos_item_ids, neg_item_ids):
                 dataset.append((user_id, pos_item_id, 1))
                 dataset.append((user_id, neg_item_id, -1))
         return dataset
 
-    def train_eval_split(self, dataset: ListDataset) -> tuple[ListDataset, ListDataset]:
+    def __train_eval_split(self, dataset: ListDataset) -> DualEncoderSplit:
         generator = torch.Generator().manual_seed(42)
-        return torch.utils.data.random_split(dataset, [0.95, 0.05], generator=generator)
+        train_dataset, eval_dataset = torch.utils.data.random_split(
+            dataset, [0.95, 0.05], generator=generator
+        )
+        return DualEncoderSplit(train_dataset, eval_dataset)
 
     def save(self, save_path: str = "./saved"):
         pass
 
-    def run_default(self):
-        neg_interactions = self.make_negative_samples()
-        dataset = ListDataset(self.create_dataset(neg_interactions))
-        self.train_dataset, self.eval_dataset = self.train_eval_split(dataset)
+    def split(
+        self, freq_margin: float = 0.15, neg_per_sample: int = 3
+    ) -> DualEncoderSplit:
+        """
+        Make negative sampling and split dataset
+        ---
+        Return:
+        train_dataset, eval_dataset
+        """
+        pos_neg_interactions = self.make_negative_samples(
+            freq_margin=freq_margin, neg_per_sample=neg_per_sample
+        )
+        dataset = ListDataset(self.create_dataset(pos_neg_interactions))
+        return self.__train_eval_split(dataset)
 
 
-class DualEncoderPipeline:
+class DualEncoderLoadData(DualEncoderDatasets):
     def __init__(self, **kwargs):
+
         self._interactions_path = kwargs.get(
             "interactions_path", "dataset/ml-1m/ratings.dat"
         )
@@ -333,7 +368,9 @@ class DualEncoderPipeline:
         assert self._items_path
         self._items = self.load_list_of_int_str_from_path(self._items_path)
 
-        self._kwargs = kwargs
+        super().__init__(
+            interactions=self._interactions, users=self._users, items=self._items
+        )
 
     def load_list_of_int_int_from_path(
         self, path: str, sep: str = "::"
@@ -364,24 +401,6 @@ class DualEncoderPipeline:
                 )
             )
         return res
-
-    def run_default(self) -> tuple[DualEncoderDatasets, DualEncoderTrainer]:
-        datasets = DualEncoderDatasets(
-            self._interactions, self._users, self._items, **self._kwargs
-        )
-        datasets.run_default()
-
-        trainer = DualEncoderTrainer(
-            users_size=datasets.users_size,
-            items_size=datasets.items_size,
-            embedding_dim=32,
-            train_dataset=datasets.train_dataset,
-            eval_dataset=datasets.eval_dataset,
-            **self._kwargs,
-        )
-        trainer.train()
-        trainer.save()
-        return datasets, trainer
 
 
 if __name__ == "__main__":
