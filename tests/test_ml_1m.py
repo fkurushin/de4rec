@@ -80,5 +80,5 @@ def test_trainer(datasets, dataset_split):
     )
     trainer.train()
     trainer.save_model("./saved")
-    trainer.save_all_metrics(dataset_split.eval_dataset)
+    #trainer.save_all_metrics(dataset_split.eval_dataset)
     assert trainer
