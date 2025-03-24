@@ -37,7 +37,7 @@ install: .venv  .base .main .extras
 	test -d dataset/ml-1m  || unzip dataset/ml-1m.zip -d dataset/
 
 .pytest:
-	. .venv/bin/activate && pytest ${TESTS} --cov=${SOURCES} --cov-report=xml
+	. .venv/bin/activate && pytest -v -v  ${TESTS} --cov=${SOURCES} --cov-report=xml
 
 .lint: .isort .black .ruff
 lint: .venv .lint

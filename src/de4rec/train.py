@@ -41,11 +41,8 @@ class DataCollatorForList:
     Convert DataList to named tensors and move to device
     """
 
-    def __init__(self, device):
-        self.device = device
-
     def __call__(self, batch):
-        tbatch = torch.tensor(batch).to(self.device)
+        tbatch = torch.tensor(batch)
         return {
             "user_ids": tbatch[:, 0:1],
             "item_ids": tbatch[:, 1:2],
@@ -64,15 +61,29 @@ class DualEncoderOutput(ModelOutput):
     labels: Optional[torch.LongTensor] = None
 
 
+@dataclass
+class DualEncoderSplit:
+    train_dataset: ListDataset
+    eval_dataset: ListDataset
+
+
 class DualEncoderConfig(PretrainedConfig):
     model_type = "DualEncoder"
 
-    def __init__(self, **kwargs):
-        self.users_size = kwargs.get("users_size")
-        self.items_size = kwargs.get("items_size")
-        self.embedding_dim = kwargs.get("embedding_dim")
-        self.margin = kwargs.get("margin", 0.5)
-        self.max_norm = kwargs.get("max_norm", 1.0)
+    def __init__(
+        self,
+        users_size: int = 1,
+        items_size: int = 1,
+        embedding_dim: int = 2,
+        margin: float = 0.5,
+        max_norm: float = 1.0,
+        **kwargs,
+    ):
+        self.users_size = users_size
+        self.items_size = items_size
+        self.embedding_dim = embedding_dim
+        self.margin = margin
+        self.max_norm = max_norm
         super().__init__(**kwargs)
 
 
@@ -129,30 +140,17 @@ class DualEncoderModel(PreTrainedModel):
         """
         return torch.topk(
             self.cs(
-                self.user_embeddings.weight[item_ids, :].mean(dim=0),
+                self.item_embeddings.weight[item_ids, :].mean(dim=0),
                 self.item_embeddings.weight,
             ).detach(),
             k=top_k,
         ).indices.tolist()
 
 
-class DualEncoderTrainer(Trainer):
-    clf_metrics = evaluate.combine(["accuracy", "f1", "precision", "recall"])
-
+class DualEncoderTrainingArguments(TrainingArguments):
     def __init__(self, **kwargs):
-        assert kwargs.get("users_size", 0) > 0
-        assert kwargs.get("items_size", 0) > 0
-        assert kwargs.get("embedding_dim", 0) > 16
-
-        assert kwargs.get("train_dataset")
-        assert kwargs.get("eval_dataset")
-
-        self._config = DualEncoderConfig(**kwargs)
-        self._model = DualEncoderModel(self._config)
-        self._device = "cuda" if torch.cuda.is_available() else "cpu"
-        self._model.to(self._device)
-
-        self._training_args = TrainingArguments(
+        self._kwargs = kwargs
+        super().__init__(
             output_dir=kwargs.get("output_dir", "./results"),
             eval_strategy=kwargs.get("eval_strategy", "steps"),
             logging_steps=kwargs.get("logging_steps", 10000),
@@ -183,27 +181,31 @@ class DualEncoderTrainer(Trainer):
             ],
         )
 
+
+class DualEncoderTrainer(Trainer):
+    clf_metrics = evaluate.combine(["accuracy", "f1", "precision", "recall"])
+
+    def __init__(
+        self,
+        model: DualEncoderModel,
+        training_arguments: DualEncoderTrainingArguments,
+        dataset_split: DualEncoderSplit,
+        **kwargs,
+    ):
+
         super().__init__(
-            model=self._model,
-            args=self._training_args,
-            data_collator=DataCollatorForList(self._device),
-            train_dataset=kwargs.get("train_dataset"),
-            eval_dataset=kwargs.get("eval_dataset"),
+            model=model,
+            args=training_arguments,
+            data_collator=DataCollatorForList(),
+            train_dataset=dataset_split.train_dataset,
+            eval_dataset=dataset_split.eval_dataset,
             compute_metrics=DualEncoderTrainer.compute_metrics,
         )
-
         self._save_path = kwargs.get("save_path", "./saved")
         self._kwargs = kwargs
 
-    def save_model(self):
-        self.save_model(self._save_path)
-
-    def save_metrics(self):
-        metrics = self.predict(
-            test_dataset=self._kwargs.get(
-                "test_dataset", self._kwargs.get("eval_dataset")
-            )
-        )
+    def save_all_metrics(self, eval_dataset : ListDataset):
+        metrics = self.predict(test_dataset=eval_dataset)
         self.save_metrics(split="all", metrics=metrics)
 
     @staticmethod
@@ -213,12 +215,6 @@ class DualEncoderTrainer(Trainer):
         return DualEncoderTrainer.clf_metrics.compute(
             predictions=predictions, references=labels
         )
-
-
-@dataclass
-class DualEncoderSplit:
-    train_dataset: ListDataset
-    eval_dataset: ListDataset
 
 
 @dataclass
@@ -279,9 +275,9 @@ class DualEncoderDatasets:
             return np.random.choice(
                 item_id_to_choice, size=n_samples, replace=False, p=freq_dist_copy
             ).tolist()
-        except:
+        except ValueError:
             print(item_id_to_choice.shape, n_samples)
-            return [0]*n_samples   
+            return [0] * n_samples
 
     def make_pos_distributions(
         self, interactions: list[tuple[int, int]]

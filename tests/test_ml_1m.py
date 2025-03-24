@@ -5,7 +5,13 @@ sys.path.append("src")
 import numpy as np
 import pytest
 
-from de4rec import DualEncoderLoadData, DualEncoderTrainer
+from de4rec import (
+    DualEncoderLoadData,
+    DualEncoderConfig,
+    DualEncoderModel,
+    DualEncoderTrainer,
+    DualEncoderTrainingArguments,
+)
 
 
 @pytest.fixture
@@ -52,14 +58,27 @@ def test_run(dataset_split):
     assert len(dataset_split.eval_dataset) > 1
 
 
+def test_config():
+    config = DualEncoderConfig(users_size=101, items_size=102, embedding_dim=32)
+    config.save_pretrained("./saved")
+
+
 def test_trainer(datasets, dataset_split):
-    trainer = DualEncoderTrainer(
+    config = DualEncoderConfig(
         users_size=datasets.users_size,
         items_size=datasets.items_size,
         embedding_dim=32,
-        train_dataset=dataset_split.train_dataset,
-        eval_dataset=dataset_split.eval_dataset,
+    )
+    model = DualEncoderModel(config)
+
+    training_arguments = DualEncoderTrainingArguments(
+        logging_steps=1000, learning_rate=1e-5
+    )
+
+    trainer = DualEncoderTrainer(
+        model=model, training_arguments=training_arguments, dataset_split=dataset_split
     )
     trainer.train()
-
+    trainer.save_model("./saved")
+    trainer.save_all_metrics(dataset_split.eval_dataset)
     assert trainer
