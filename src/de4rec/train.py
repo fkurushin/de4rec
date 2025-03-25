@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 import evaluate
@@ -65,6 +65,7 @@ class DualEncoderOutput(ModelOutput):
 class DualEncoderSplit:
     train_dataset: ListDataset
     eval_dataset: ListDataset
+    test_dataset: ListDataset = field(init=False)
 
 
 class DualEncoderConfig(PretrainedConfig):
