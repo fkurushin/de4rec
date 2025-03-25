@@ -183,7 +183,7 @@ class DualEncoderTrainingArguments(TrainingArguments):
 
 
 class DualEncoderTrainer(Trainer):
-    clf_metrics = evaluate.combine(["accuracy", "f1", "precision", "recall"])
+    roc_auc_score = evaluate.load("roc_auc")
 
     def __init__(
         self,
@@ -204,16 +204,16 @@ class DualEncoderTrainer(Trainer):
         self._save_path = kwargs.get("save_path", "./saved")
         self._kwargs = kwargs
 
-    def save_all_metrics(self, eval_dataset : ListDataset):
+    def save_all_metrics(self, eval_dataset: ListDataset):
         metrics = self.predict(test_dataset=eval_dataset)
         self.save_metrics(split="all", metrics=metrics)
 
     @staticmethod
     def compute_metrics(eval_pred: EvalPrediction):
         (logits, labels), _ = eval_pred
-        predictions = (logits > 0) * 2 - 1
-        return DualEncoderTrainer.clf_metrics.compute(
-            predictions=predictions, references=labels
+        prediction_scores = logits * 2 - 1
+        return DualEncoderTrainer.roc_auc_score.compute(
+            prediction_scores=prediction_scores, references=labels
         )
 
 

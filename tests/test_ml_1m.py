@@ -72,7 +72,7 @@ def test_trainer(datasets, dataset_split):
     model = DualEncoderModel(config)
 
     training_arguments = DualEncoderTrainingArguments(
-        logging_steps=1000, learning_rate=1e-5, use_cpu=~torch.cuda.is_available()
+        logging_steps=1000, learning_rate=1e-3, use_cpu=~torch.cuda.is_available(), per_device_train_batch_size = 4 * 256,
     )
 
     trainer = DualEncoderTrainer(
@@ -80,5 +80,4 @@ def test_trainer(datasets, dataset_split):
     )
     trainer.train()
     trainer.save_model("./saved")
-    #trainer.save_all_metrics(dataset_split.eval_dataset)
     assert trainer
