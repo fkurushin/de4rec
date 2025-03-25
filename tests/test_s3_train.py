@@ -3,6 +3,7 @@ import sys
 sys.path.append("src")
 import os
 
+import dill
 import pytest
 import torch
 
@@ -72,21 +73,25 @@ class TestS3Train:
         assert len(dataset_split.train_dataset) > 100
         assert len(dataset_split.eval_dataset) > 100
 
-    def test_trainer(
-        self, datasets: DualEncoderDatasets, dataset_split: DualEncoderSplit
-    ):
+    @pytest.fixture
+    def model(self, datasets: DualEncoderDatasets) -> DualEncoderModel:
         config = DualEncoderConfig(
             users_size=datasets.users_size,
             items_size=datasets.items_size,
             embedding_dim=32,
         )
-        model = DualEncoderModel(config)
+        return DualEncoderModel(config)
 
+    def test_model(self, model):
+        assert sum(p.numel() for p in model.parameters() if p.requires_grad) > 100_000
+
+    def test_trainer(self, dataset_split: DualEncoderSplit, model: DualEncoderModel):
         training_arguments = DualEncoderTrainingArguments(
-            logging_steps=1000,
-            learning_rate=1e-3,
+            logging_steps=10000,
+            learning_rate=5e-3,
             use_cpu=not torch.cuda.is_available(),
-            per_device_train_batch_size=4 * 256,
+            per_device_train_batch_size=4 * 16 * 256,
+            num_train_epochs=12,
         )
 
         trainer = DualEncoderTrainer(
@@ -98,6 +103,19 @@ class TestS3Train:
         trainer.save_model("./saved")
 
         assert trainer
+
+    def test_predict(self, model: DualEncoderModel, datasets: DualEncoderDatasets):
+
+        model.eval()
+        with torch.no_grad():
+            inference = model.recommend_topk_by_user_ids(
+                user_ids = list(map(lambda tu: tu[0], datasets.users)), top_k = 5
+            )
+
+        assert len(inference) == len(datasets.users)
+
+        dill.dump(inference, open("./saved/inference.dill", "wb"))
+        dill.dump(datasets, open("./saved/datasets.dill", "wb"))
 
     def test_upload(self, s3, bucket_name: str, model_key: str):
         assert s3.safe_upload_folder("./saved", bucket_name, model_key)

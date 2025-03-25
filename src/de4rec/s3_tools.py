@@ -63,12 +63,13 @@ class s3_tools:
         if object_name is None:
             object_name = folder_name
 
+        
         if self.check_exists(bucket_name, object_name):
             object_name = object_name.strip("/") + str(int(time.perf_counter())) + "/"
-        print(f"{object_name=}")
-        # self.s3_client.put_object(Bucket=bucket_name, Key=object_name)
+
+        folder_name = folder_name.strip("/") + "/"
         results = []
-        for file_name in glob(folder_name):
+        for file_name in glob(folder_name + "*"):
             res = self.upload_file(
                 file_name,
                 bucket_name,
