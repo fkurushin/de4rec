@@ -72,9 +72,9 @@ class DualEncoderConfig(PretrainedConfig):
 
     def __init__(
         self,
-        users_size: int = 1,
-        items_size: int = 1,
-        embedding_dim: int = 2,
+        users_size: int = None,
+        items_size: int = None,
+        embedding_dim: int = None,
         margin: float = 0.5,
         max_norm: float = 1.0,
         **kwargs,
@@ -232,11 +232,6 @@ class DualEncoderDatasets:
     interactions: list[tuple[int, int]]
     users: list[tuple[int, str]]
     items: list[tuple[int, str]]
-    freq_margin: float = 0.15
-    neg_per_sample: int = 3
-
-    #    train_dataset: ListDataset = field(init=False, repr=False)
-    #    eval_dataset: ListDataset = field(init=False, repr=False)
 
     def __post_init__(self):
         self._users_size = max(self.users, key=lambda tu: tu[0])[0] + 1
