@@ -4,27 +4,24 @@ sys.path.append("src")
 import os
 
 import pytest
-
-from de4rec import (
-    DualEncoderConfig,
-    DualEncoderDatasets,
-    DualEncoderSplit,
-    DualEncoderModel,
-    DualEncoderTrainer,
-    DualEncoderTrainingArguments,
-    s3_tools,
-)
 import torch
+
+from de4rec import (DualEncoderConfig, DualEncoderDatasets, DualEncoderModel,
+                    DualEncoderSplit, DualEncoderTrainer,
+                    DualEncoderTrainingArguments, s3_tools)
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("S3_ACCESS_KEY") is None,
     reason="no s3 env found. Set S3_ACCESS_KEY, S3_SECRET, S3_URL S3_BUCKET_NAME S3_MODEL_KEY S3_DATA_KEY",
 )
 
+
 class TestS3Train:
 
     @pytest.fixture
-    def s3(self,):
+    def s3(
+        self,
+    ):
         return s3_tools()
 
     def test_s3(self, s3):
@@ -88,7 +85,7 @@ class TestS3Train:
         training_arguments = DualEncoderTrainingArguments(
             logging_steps=1000,
             learning_rate=1e-3,
-            use_cpu=~torch.cuda.is_available(),
+            use_cpu=not torch.cuda.is_available(),
             per_device_train_batch_size=4 * 256,
         )
 

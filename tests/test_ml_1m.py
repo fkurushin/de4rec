@@ -12,7 +12,8 @@ from de4rec import (
     DualEncoderTrainer,
     DualEncoderTrainingArguments,
 )
-import torch 
+import torch
+
 
 @pytest.fixture
 def datasets():
@@ -72,7 +73,10 @@ def test_trainer(datasets, dataset_split):
     model = DualEncoderModel(config)
 
     training_arguments = DualEncoderTrainingArguments(
-        logging_steps=1000, learning_rate=1e-3, use_cpu=~torch.cuda.is_available(), per_device_train_batch_size = 4 * 256,
+        logging_steps=1000,
+        learning_rate=1e-3,
+        use_cpu=not torch.cuda.is_available(),
+        per_device_train_batch_size=4 * 256,
     )
 
     trainer = DualEncoderTrainer(
