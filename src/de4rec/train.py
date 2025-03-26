@@ -148,6 +148,42 @@ class DualEncoderModel(PreTrainedModel):
         ).indices.tolist()
 
 
+class DualEncoderRecommender:
+    def __init__(self, model: DualEncoderModel):
+        model.eval()
+        with torch.no_grad():
+            self.user_normed_embs = (
+                model.user_embeddings.weight
+                / torch.functional.norm(model.user_embeddings.weight, dim=1).unsqueeze(
+                    -1
+                )
+            )
+            self.item_normed_embs = (
+                model.item_embeddings.weight
+                / torch.functional.norm(model.item_embeddings.weight, dim=1).unsqueeze(
+                    -1
+                )
+            ).T
+
+    def batch_recommend_topk_by_user_ids(
+        self, user_ids: list[int], top_k: int, batch_size: int
+    ) -> list[list[int]]:
+        recommended_item_ids = []
+        user_ids_size = len(user_ids)
+        for batch in tqdm(range(0, user_ids_size, batch_size)):
+            recommended_item_ids += (
+                torch.matmul(
+                    self.user_normed_embs[batch : batch + batch_size],
+                    self.item_normed_embs,
+                )
+                .topk(top_k, dim=1)
+                .indices.detach()
+                .tolist()
+            )
+
+        return recommended_item_ids
+
+
 class DualEncoderTrainingArguments(TrainingArguments):
     def __init__(self, **kwargs):
         self._kwargs = kwargs

@@ -11,9 +11,13 @@ from de4rec import (
     DualEncoderModel,
     DualEncoderTrainer,
     DualEncoderTrainingArguments,
+    DualEncoderRecommender
 )
 import torch
 
+@pytest.fixture
+def save_path():
+    return "./ml_1m/"
 
 @pytest.fixture
 def datasets():
@@ -59,12 +63,12 @@ def test_run(dataset_split):
     assert len(dataset_split.eval_dataset) > 1
 
 
-def test_config():
+def test_config(save_path):
     config = DualEncoderConfig(users_size=101, items_size=102, embedding_dim=32)
-    config.save_pretrained("./saved")
+    config.save_pretrained(save_path)
 
 
-def test_trainer(datasets, dataset_split):
+def test_trainer(datasets, dataset_split, save_path):
     config = DualEncoderConfig(
         users_size=datasets.users_size,
         items_size=datasets.items_size,
@@ -83,5 +87,16 @@ def test_trainer(datasets, dataset_split):
         model=model, training_arguments=training_arguments, dataset_split=dataset_split
     )
     trainer.train()
-    trainer.save_model("./saved")
+    trainer.save_model(save_path)
     assert trainer
+
+@pytest.fixture
+def model(save_path) -> DualEncoderModel: 
+    return DualEncoderModel.from_pretrained(save_path)
+
+def test_recomm(model : DualEncoderModel, datasets):
+    assert sum(p.numel() for p in model.parameters() if p.requires_grad) > 1000
+    sample = 30
+    recommender = DualEncoderRecommender(model=model)
+    rec_items = recommender.batch_recommend_topk_by_user_ids(user_ids = datasets.users[:sample], top_k =  3, batch_size = 10)
+    assert len(rec_items) == sample
