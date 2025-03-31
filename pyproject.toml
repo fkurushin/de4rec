@@ -1,6 +1,6 @@
 [project]
 name = "de4rec"
-version = "0.2.4"
+version = "0.3.0"
 description = "Dual Encoder  model for recommendations of search suggests"
 
 authors = [
@@ -34,6 +34,9 @@ addopts = "-ra -q"
 testpaths = [
     "tests",
 ]
+
+[tool.ruff]
+exclude = [".venv", "__init__.py"]
 
 [project.urls]
 Homepage = "https://github.com/fkrasnov2/de4rec"

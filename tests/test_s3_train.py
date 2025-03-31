@@ -23,9 +23,11 @@ pytestmark = pytest.mark.skipif(
     reason="no s3 env found. Set S3_ACCESS_KEY, S3_SECRET, S3_URL S3_BUCKET_NAME S3_MODEL_KEY S3_DATA_KEY",
 )
 
+
 @pytest.fixture
 def save_path():
     return "./DualEncoder/"
+
 
 class TestS3Train:
 
@@ -95,7 +97,9 @@ class TestS3Train:
     def test_model(self, model):
         assert sum(p.numel() for p in model.parameters() if p.requires_grad) > 100_000
 
-    def test_trainer(self, dataset_split: DualEncoderSplit, model: DualEncoderModel, save_path):
+    def test_trainer(
+        self, dataset_split: DualEncoderSplit, model: DualEncoderModel, save_path
+    ):
         training_arguments = DualEncoderTrainingArguments(
             logging_steps=10000,
             learning_rate=5e-3,
@@ -119,26 +123,33 @@ class TestS3Train:
         model.eval()
         with torch.no_grad():
             inference = model.recommend_topk_by_user_ids(
-                    user_ids=list(map(lambda tu: tu[0], datasets.users[:sample_num])), top_k=5
+                user_ids=list(map(lambda tu: tu[0], datasets.users[:sample_num])),
+                top_k=5,
             )
 
         assert len(inference) == sample_num
 
     @pytest.fixture
-    def saved_model(self, save_path) -> DualEncoderModel: 
+    def saved_model(self, save_path) -> DualEncoderModel:
         return DualEncoderModel.from_pretrained(save_path)
 
-    def test_recom_batch(self, saved_model: DualEncoderModel, datasets: DualEncoderDatasets, save_path):
+    def test_recom_batch(
+        self, saved_model: DualEncoderModel, datasets: DualEncoderDatasets, save_path
+    ):
 
-        assert sum(p.numel() for p in saved_model.parameters() if p.requires_grad) > 1000
+        assert (
+            sum(p.numel() for p in saved_model.parameters() if p.requires_grad) > 1000
+        )
 
         recommender = DualEncoderRecommender(model=saved_model)
-        inference = recommender.batch_recommend_topk_by_user_ids(user_ids = datasets.users, top_k =  5, batch_size = 10_000)
+        inference = recommender.batch_recommend_topk_by_user_ids(
+            user_ids=list(map(lambda tu: tu[0], datasets.users)), top_k=5, batch_size=10_000
+        )
 
         assert len(inference) == len(datasets.users)
 
         dill.dump(inference, open(save_path + "/inference.dill", "wb"))
         dill.dump(datasets, open(save_path + "/datasets.dill", "wb"))
 
-    def test_upload(self, s3, bucket_name: str, model_key: str, save_path : str):
+    def test_upload(self, s3, bucket_name: str, model_key: str, save_path: str):
         assert s3.safe_upload_folder(save_path, bucket_name, model_key)

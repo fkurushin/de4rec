@@ -36,6 +36,10 @@ install: .venv  .base .main .extras
 	test -s dataset/ml-1m.zip  || wget --no-check-certificate https://files.grouplens.org/datasets/movielens/ml-1m.zip -O dataset/ml-1m.zip
 	test -d dataset/ml-1m  || unzip dataset/ml-1m.zip -d dataset/
 
+.pytest_inference:
+	. .venv/bin/activate && pytest -v -v  ${TESTS} --cov=${SOURCES} --cov-report=xml --capture=no -k TestInference
+
+
 .pytest_s3:
 	. .venv/bin/activate && pytest -v -v  ${TESTS} --cov=${SOURCES} --cov-report=xml --capture=no -k TestS3Train
 
@@ -47,6 +51,8 @@ lint: .venv .lint
 
 .test: .assets .extras .pytest
 test: .test
+
+test_inference: .extras .pytest_inference
 
 test_s3: .extras .pytest_s3
 

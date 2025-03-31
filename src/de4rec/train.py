@@ -7,7 +7,8 @@ import evaluate
 import numpy as np
 import torch
 from tqdm import tqdm
-from transformers import PretrainedConfig, PreTrainedModel, Trainer, TrainingArguments
+from transformers import (PretrainedConfig, PreTrainedModel, Trainer,
+                          TrainingArguments)
 from transformers.modeling_outputs import ModelOutput
 from transformers.trainer_utils import EvalPrediction
 
@@ -163,7 +164,7 @@ class DualEncoderRecommender:
                 / torch.functional.norm(model.item_embeddings.weight, dim=1).unsqueeze(
                     -1
                 )
-            ).T
+            )
 
     def batch_recommend_topk_by_user_ids(
         self, user_ids: list[int], top_k: int, batch_size: int
@@ -173,8 +174,30 @@ class DualEncoderRecommender:
         for batch in tqdm(range(0, user_ids_size, batch_size)):
             recommended_item_ids += (
                 torch.matmul(
-                    self.user_normed_embs[batch : batch + batch_size],
-                    self.item_normed_embs,
+                    self.user_normed_embs[user_ids[batch : batch + batch_size]],
+                    self.item_normed_embs.T,
+                )
+                .topk(top_k, dim=1)
+                .indices.detach()
+                .tolist()
+            )
+
+        return recommended_item_ids
+
+    def batch_recommend_topk_by_item_ids(
+        self, item_ids_list: list[list[int]], top_k: int, batch_size: int
+    ) -> list[list[int]]:
+        recommended_item_ids = []
+        item_ids_list_size = len(item_ids_list)
+        for batch in tqdm(range(0, item_ids_list_size, batch_size)):
+            batch_item_id_meaned = []
+            for item_ids in item_ids_list[ batch : batch + batch_size]:
+                batch_item_id_meaned.append(self.item_normed_embs[item_ids].mean(dim=0))
+
+            recommended_item_ids += (
+                torch.matmul(
+                    torch.stack(batch_item_id_meaned),
+                    self.item_normed_embs.T,
                 )
                 .topk(top_k, dim=1)
                 .indices.detach()
