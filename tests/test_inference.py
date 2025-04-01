@@ -1,4 +1,5 @@
 import sys
+import os
 
 sys.path.append("src")
 
@@ -9,11 +10,12 @@ from de4rec import (
     DualEncoderRecommender,
 )
 
+save_path_str = "./DualEncoder/"
+pytestmark = pytest.mark.skipif( not os.path.isdir(save_path_str), reason="no saved model")
 
 @pytest.fixture
 def save_path():
     return "./DualEncoder/"
-
 
 class TestInference:
 

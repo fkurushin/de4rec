@@ -43,13 +43,13 @@ install: .venv  .base .main .extras
 .pytest_s3:
 	. .venv/bin/activate && pytest -v -v  ${TESTS} --cov=${SOURCES} --cov-report=xml --capture=no -k TestS3Train
 
-.pytest:
-	. .venv/bin/activate && pytest -v -v  ${TESTS} --cov=${SOURCES} --cov-report=xml --capture=no 
+.pytest_ml1m:
+	. .venv/bin/activate && pytest -v -v  ${TESTS} --cov=${SOURCES} --cov-report=xml --capture=no  -k TestML1M 
 
 .lint: .isort .black .ruff
 lint: .venv .lint
 
-.test: .assets .extras .pytest
+.test: .assets .extras .pytest_ml1m .pytest_s3 .pytest_inference
 test: .test
 
 test_inference: .extras .pytest_inference
