@@ -77,8 +77,8 @@ class DualEncoderConfig(PretrainedConfig):
         users_size: int = None,
         items_size: int = None,
         embedding_dim: int = None,
-        margin: float = 0.5,
-        max_norm: float = 1.0,
+        margin: float = 0.85,
+        max_norm: float = 5.0,
         **kwargs,
     ):
         self.users_size = users_size
