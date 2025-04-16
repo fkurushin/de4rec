@@ -1,6 +1,6 @@
 [project]
 name = "de4rec"
-version = "0.5.0"
+version = "0.5.1"
 description = "Dual Encoder  model for recommendations of search suggests"
 
 authors = [

@@ -77,9 +77,9 @@ class TextEncoderConfig(PretrainedConfig):
 
     def __init__(
         self,
-        tokens_size: int,
-        texts_size: int,
-        embedding_dim: int,
+        tokens_size: int = None,
+        texts_size: int = None,
+        embedding_dim: int =None,
         margin: float = 0.85,
         **kwargs,
     ):
