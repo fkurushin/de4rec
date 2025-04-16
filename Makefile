@@ -46,15 +46,20 @@ install: .venv  .base .main .extras
 .pytest_ml1m:
 	. .venv/bin/activate && pytest -v -v  ${TESTS} --cov=${SOURCES} --cov-report=xml --capture=no  -k TestML1M 
 
+.pytest_tokenizer:
+	. .venv/bin/activate && pytest -v -v  ${TESTS} --cov=${SOURCES} --cov-report=xml --capture=no  -k TestTokenizer 
+
 .lint: .isort .black .ruff
 lint: .venv .lint
 
-.test: .assets .extras .pytest_ml1m .pytest_s3 .pytest_inference
+.test: .assets .extras .pytest_ml1m .pytest_s3 .pytest_inference .pytest_tokenizer
 test: .test
 
 test_inference: .extras .pytest_inference
 
 test_s3: .extras .pytest_s3
+
+test_tokenizer: .pytest_tokenizer
 
 build: 
 	rm -f dist/*
