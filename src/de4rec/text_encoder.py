@@ -1,20 +1,19 @@
-from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Optional
 
+import dill
 import evaluate
 import numpy as np
 import torch
+from scipy.sparse import csr_matrix
+from sklearn.feature_extraction.text import CountVectorizer
+from torch.nn.utils.rnn import pad_sequence
 from tqdm import tqdm
 from transformers import (PretrainedConfig, PreTrainedModel, Trainer,
                           TrainingArguments)
 from transformers.modeling_outputs import ModelOutput
 from transformers.trainer_utils import EvalPrediction
-
-from scipy.sparse import csr_matrix
-from torch.nn.utils.rnn import pad_sequence
-from sklearn.feature_extraction.text import CountVectorizer
 
 
 class ListDataset(torch.utils.data.Dataset):
@@ -40,6 +39,7 @@ class ListDataset(torch.utils.data.Dataset):
             res.update(lst)
         return len(res)
 
+
 class TextDataCollatorForList:
     """
     Convert DataList to named tensors and move to device
@@ -54,7 +54,9 @@ class TextDataCollatorForList:
 
         return {
             "text_ids": torch.LongTensor(text_ids),
-            "tokens_ids": pad_sequence(tokens_ids, batch_first=True, padding_value=0), ## tuple of tokens of search_text
+            "tokens_ids": pad_sequence(
+                tokens_ids, batch_first=True, padding_value=0
+            ),  ## tuple of tokens of search_text
             "labels": torch.LongTensor(labels),
         }
 
@@ -64,16 +66,20 @@ class TextEncoderOutput(ModelOutput):
     """
     Output of the TextEncoder model
     """
+
     loss: Optional[torch.FloatTensor] = None
     logits: Optional[torch.FloatTensor] = None
     labels: Optional[torch.LongTensor] = None
+
 
 class TextEncoderConfig(PretrainedConfig):
     model_type = "TextEncoder"
 
     def __init__(
         self,
-        tokens_size: int = None,
+        tokens_size: int,
+        texts_size: int,
+        embedding_dim: int,
         margin: float = 0.85,
         **kwargs,
     ):
@@ -83,6 +89,7 @@ class TextEncoderConfig(PretrainedConfig):
         self.margin = margin
         super().__init__(**kwargs)
 
+
 class TextEncoderModel(PreTrainedModel):
     config_class = TextEncoderConfig
 
@@ -90,11 +97,11 @@ class TextEncoderModel(PreTrainedModel):
         super().__init__(config)
 
         self.text_embeddings = torch.nn.Embedding(
-            config.texts_size, embedding_dim = config.embedding_dim
+            config.texts_size, embedding_dim=config.embedding_dim
         )
 
         self.token_embeddings = torch.nn.Embedding(
-            config.tokens_size, embedding_dim = config.embedding_dim, padding_idx=0
+            config.tokens_size, embedding_dim=config.embedding_dim, padding_idx=0
         )
         self.cel = torch.nn.CosineEmbeddingLoss(margin=config.margin, reduction="mean")
         self.cs = torch.nn.CosineSimilarity()
@@ -114,13 +121,16 @@ class TextEncoderModel(PreTrainedModel):
         text_id
         """
         text_id = torch.topk(
-                    self.cs(
-                        self.token_embeddings(torch.LongTensor(token_ids)).sum(dim=0).to(self.text_embeddings.weight.device),
-                        self.text_embeddings.weight,
-                    ).detach(),
-                    k=1,
-                ).indices[0]
+            self.cs(
+                self.token_embeddings(torch.LongTensor(token_ids))
+                .sum(dim=0)
+                .to(self.text_embeddings.weight.device),
+                self.text_embeddings.weight,
+            ).detach(),
+            k=1,
+        ).indices[0]
         return text_id
+
 
 class TextEncoderTrainingArguments(TrainingArguments):
     def __init__(self, **kwargs):
@@ -156,11 +166,13 @@ class TextEncoderTrainingArguments(TrainingArguments):
             ],
         )
 
+
 @dataclass
 class TextEncoderSplit:
     train_dataset: ListDataset
     eval_dataset: ListDataset
     test_dataset: ListDataset = field(init=False)
+
 
 class TextEncoderTrainer(Trainer):
     roc_auc_score = evaluate.load("roc_auc")
@@ -196,23 +208,29 @@ class TextEncoderTrainer(Trainer):
             prediction_scores=prediction_scores, references=labels
         )
 
+
 class TextEncoderTokenizer(CountVectorizer):
-    def __init__(self,):
-        super().__init__(stop_words = ["на", "для"], dtype = int)
+    _filename = "/tokenizer.dill"
+
+    def __init__(
+        self,
+    ):
+        super().__init__(stop_words=["на", "для"], dtype=int)
         self._filename = "/tokenizer.dill"
 
-    def save(self, save_path : str = "./saved/"):
-        with open(save_path + self._filename , "wb") as fn:
+    def save(self, save_path: str = "./saved/"):
+        with open(save_path + TextEncoderTokenizer._filename, "wb") as fn:
             dill.dump(self, fn)
 
-    def tokenize(self, text : str) -> list[int]:
+    def tokenize(self, text: str) -> list[int]:
         vec = self.transform([text])
         return vec[0].nonzero()[1]
 
     @staticmethod
-    def load(save_path : str = "./saved/") :
-        with open(save_path + self._filename , "rb") as fn:
-            return dill.load(fn)    
+    def load(save_path: str = "./saved/"):
+        with open(save_path + TextEncoderTokenizer._filename, "rb") as fn:
+            return dill.load(fn)
+
 
 @dataclass
 class TextEncoderDatasets:
@@ -242,26 +260,41 @@ class TextEncoderDatasets:
         --
         Return:
         """
-        neg_idx = np.argwhere(self.search_texts_vecs [: , token_ids ].sum(axis=1).A.ravel() == 0)
-        distr = np.float32(np.log10(self.search_texts_vecs.sum(axis=1).A.ravel()[neg_idx] + 1).ravel())
+        neg_idx = np.argwhere(
+            self.search_texts_vecs[:, token_ids].sum(axis=1).A.ravel() == 0
+        )
+        distr = np.float32(
+            np.log10(self.search_texts_vecs.sum(axis=1).A.ravel()[neg_idx] + 1).ravel()
+        )
         distr = distr / distr.sum()
-        return tuple(np.random.choice(neg_idx.ravel(), neg_per_sample, p=distr).tolist())
+        return tuple(
+            np.random.choice(neg_idx.ravel(), neg_per_sample, p=distr).tolist()
+        )
 
-    def make_negative_samples(self, neg_per_sample: int) -> list[tuple[int, tuple[int], tuple[int]]]:
+    def make_negative_samples(
+        self, neg_per_sample: int
+    ) -> list[tuple[int, tuple[int], tuple[int]]]:
         """
         pos_text_id, [neg_text_ids], [token_ids]
         """
         with ThreadPoolExecutor() as pool:
             pos_neg_token_text_ids = list(
                 pool.map(
-                    lambda tu: (tu[0], self.neg_choice(token_ids=tuple(map(int,tu[1].nonzero()[1])), neg_per_sample=neg_per_sample), tuple(map(int,tu[1].nonzero()[1]))),
-                    enumerate(self.search_texts_vecs)
+                    lambda tu: (
+                        tu[0],
+                        self.neg_choice(
+                            token_ids=tuple(map(int, tu[1].nonzero()[1])),
+                            neg_per_sample=neg_per_sample,
+                        ),
+                        tuple(map(int, tu[1].nonzero()[1])),
+                    ),
+                    enumerate(self.search_texts_vecs),
                 )
             )
         return pos_neg_token_text_ids
 
     def create_dataset(
-        self, pos_neg_token_text_ids:  list[tuple[int, tuple[int], tuple[int]]]
+        self, pos_neg_token_text_ids: list[tuple[int, tuple[int], tuple[int]]]
     ) -> list[list[int, int, int]]:
         """
         Expand list of pos_neg_token_text_ids to tuple of text_id, [token_ids], label
@@ -291,8 +324,9 @@ class TextEncoderDatasets:
         Return:
         train_dataset, eval_dataset
         """
-        pos_neg_token_text_ids = self.make_negative_samples(neg_per_sample=neg_per_sample)
+        pos_neg_token_text_ids = self.make_negative_samples(
+            neg_per_sample=neg_per_sample
+        )
         dataset = ListDataset(self.create_dataset(pos_neg_token_text_ids))
         self._datasets = self.__train_eval_split(dataset)
         return self._datasets
-
