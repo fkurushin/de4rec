@@ -1,4 +1,3 @@
-from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Optional
@@ -191,7 +190,7 @@ class DualEncoderRecommender:
         item_ids_list_size = len(item_ids_list)
         for batch in tqdm(range(0, item_ids_list_size, batch_size)):
             batch_item_id_meaned = []
-            for item_ids in item_ids_list[ batch : batch + batch_size]:
+            for item_ids in item_ids_list[batch : batch + batch_size]:
                 batch_item_id_meaned.append(self.item_normed_embs[item_ids].mean(dim=0))
 
             recommended_item_ids += (
@@ -281,29 +280,14 @@ class DualEncoderTrainer(Trainer):
 class DualEncoderDatasets:
     """
     Take interactions list : (user_id, item_id) and two lists of user_id to user string representation and item_id to item string representation
-    assert users == set(users[:,0])
-    assert items == set(items[:,0])
-
     Do negative sampling.
     Do train-eval split.
 
     """
 
     interactions: list[tuple[int, int]]
-    users: list[tuple[int, str]]
-    items: list[tuple[int, str]]
-
-    def __post_init__(self):
-        self._users_size = max(self.users, key=lambda tu: tu[0])[0] + 1
-        self._items_size = max(self.items, key=lambda tu: tu[0])[0] + 1
-
-    @property
-    def users_size(self) -> int:
-        return self._users_size
-
-    @property
-    def items_size(self) -> int:
-        return self._items_size
+    users_size: int
+    items_size: int
 
     @staticmethod
     def neg_choice(
@@ -403,50 +387,28 @@ class DualEncoderDatasets:
 class DualEncoderLoadData(DualEncoderDatasets):
     def __init__(self, **kwargs):
 
-        self._interactions_path = kwargs.get(
+        _interactions_path = kwargs.get(
             "interactions_path", "dataset/ml-1m/ratings.dat"
         )
-        assert self._interactions_path
-        self._interactions = self.load_list_of_int_int_from_path(
-            self._interactions_path
-        )
+        assert _interactions_path
+        _interactions = self.load_list_of_int_int_from_path(_interactions_path)
 
-        self._users_path = kwargs.get("users_path", "dataset/ml-1m/users.dat")
-        assert self._users_path
-        self._users = self.load_list_of_int_str_from_path(self._users_path)
-
-        self._items_path = kwargs.get("items_path", "dataset/ml-1m/movies.dat")
-        assert self._items_path
-        self._items = self.load_list_of_int_str_from_path(self._items_path)
+        _users_size = max([tu[0] for tu in _interactions]) + 1
+        _items_size = max([tu[1] for tu in _interactions]) + 1
 
         super().__init__(
-            interactions=self._interactions, users=self._users, items=self._items
+            interactions=_interactions, users_size=_users_size, items_size=_items_size
         )
 
     def load_list_of_int_int_from_path(
         self, path: str, sep: str = "::"
-    ) -> Iterable[tuple[int, int]]:
+    ) -> list[tuple[int, int]]:
         with open(path, "r", encoding="utf-8") as fn:
             res = list(
                 map(
                     lambda row: (int(row[0]), int(row[1])),
                     map(
                         lambda row: row.strip().split(sep)[:2],
-                        fn.read().strip().split("\n"),
-                    ),
-                )
-            )
-        return res
-
-    def load_list_of_int_str_from_path(
-        self, path: str, sep: str = "::"
-    ) -> Iterable[tuple[int, str]]:
-        with open(path, "r", encoding="latin1") as fn:
-            res = list(
-                map(
-                    lambda row: (int(row[0]), " ".join(row[1:])),
-                    map(
-                        lambda row: row.strip().split(sep),
                         fn.read().strip().split("\n"),
                     ),
                 )
