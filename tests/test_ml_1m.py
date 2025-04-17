@@ -100,5 +100,5 @@ class TestML1M:
         assert sum(p.numel() for p in model.parameters() if p.requires_grad) > 1000
         sample = 30
         recommender = DualEncoderRecommender(model=model)
-        rec_items = recommender.batch_recommend_topk_by_user_ids(user_ids = list(map (lambda tu: tu[0], datasets.users[:sample])), top_k =  3, batch_size = 10)
+        rec_items = recommender.batch_recommend_topk_by_user_ids(user_ids = list(range(sample)), top_k =  3, batch_size = 10)
         assert len(rec_items) == sample
