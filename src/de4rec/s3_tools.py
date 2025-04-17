@@ -1,11 +1,12 @@
 import os
 import time
 from glob import glob
+from pathlib import Path
 
 import boto3
+import dill
 from botocore.client import Config
 from botocore.exceptions import ClientError
-import dill
 
 
 class s3_tools:
@@ -63,7 +64,6 @@ class s3_tools:
         if object_name is None:
             object_name = folder_name
 
-        
         if self.check_exists(bucket_name, object_name):
             object_name = object_name.strip("/") + str(int(time.perf_counter())) + "/"
 
@@ -80,16 +80,16 @@ class s3_tools:
         return all(results)
 
     def download_folder(self, bucket_name: str, object_name: str, folder_name: str):
-        if not os.path.isdir(folder_name):
-            os.mkdir(folder_name)
 
         for key in self.s3_client.list_objects(Bucket=bucket_name)["Contents"]:
             if key["Key"].startswith(object_name):
                 print(key["Key"])
+                path_to_copy = Path(key["Key"].replace(object_name, folder_name))
+                path_to_copy.parent.mkdir(parents=True, exist_ok=True)
                 self.s3_client.download_file(
                     Bucket=bucket_name,
                     Key=key["Key"],
-                    Filename=folder_name + "/" + os.path.basename(key["Key"]),
+                    Filename=path_to_copy,
                 )
 
     def get_dill_object(self, bucket_name: str, key_name: str) -> dict:
