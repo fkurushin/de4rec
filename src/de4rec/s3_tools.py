@@ -15,7 +15,7 @@ class s3_tools:
         self._s3_client = boto3.client(
             "s3",
             endpoint_url=creds.get(
-                "WBX_S3_URL", creds.get("S3_URL", os.environ.get("S3_URL"))
+                "WBX_URL", creds.get("S3_URL", os.environ.get("S3_URL"))
             ),
             aws_access_key_id=creds.get(
                 "WBX_S3_TOKEN",
