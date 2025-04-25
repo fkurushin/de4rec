@@ -19,7 +19,6 @@ class s3_tools:
                 "S3_ACCESS_KEY", creds.get("S3_ACCESS_KEY")
             ),
             aws_secret_access_key=os.environ.get("S3_SECRET", creds.get("S3_SECRET")),
-            aws_session_token="session_token",
             config=config,
             region_name="us-east-1",
             verify=True,
