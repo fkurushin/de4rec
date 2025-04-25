@@ -14,11 +14,15 @@ class s3_tools:
         config = Config(signature_version="s3v4")
         self._s3_client = boto3.client(
             "s3",
-            endpoint_url=os.environ.get("S3_URL", creds.get("S3_URL")),
-            aws_access_key_id=os.environ.get(
-                "S3_ACCESS_KEY", creds.get("S3_ACCESS_KEY")
+            endpoint_url=os.environ.get(
+                "S3_URL", creds.get("S3_URL", creds.get("WBX_S3_URL"))
             ),
-            aws_secret_access_key=os.environ.get("S3_SECRET", creds.get("S3_SECRET")),
+            aws_access_key_id=os.environ.get(
+                "S3_ACCESS_KEY", creds.get("S3_ACCESS_KEY", creds.get("WBX_S3_TOKEN"))
+            ),
+            aws_secret_access_key=os.environ.get(
+                "S3_SECRET", creds.get("S3_SECRET", creds.get("WBX_S3_SECRET"))
+            ),
             config=config,
             region_name="us-east-1",
             verify=True,
