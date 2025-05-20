@@ -279,7 +279,7 @@ class DualEncoderTrainer(Trainer):
 @dataclass
 class DualEncoderDatasets:
     """
-    Take interactions list : (user_id, item_id) and two lists of user_id to user string representation and item_id to item string representation
+    Take interactions list : (user_id, item_id) and two dimensions: users_size and items_size.
     Do negative sampling.
     Do train-eval split.
 
