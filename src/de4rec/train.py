@@ -1,4 +1,3 @@
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -293,8 +292,8 @@ class DualEncoderDatasets:
     def neg_choice(
         freq_dist: np.array,
         pos_item_ids: list[int],
-        freq_margin: float,
         neg_per_sample: int,
+        item_id_to_choice: np.array,
     ) -> list[int]:
         """
         Choose neg_per_sample times the number of pos_item_ids based on the truncated marginal frequency distribution.
@@ -302,17 +301,11 @@ class DualEncoderDatasets:
         Return:
         list of item_ids
         """
-        freq_dist_copy = freq_dist.copy()
-        pos_item_ids = np.array(list(set(pos_item_ids)))
-        freq_dist_copy[pos_item_ids] = 0
-        freq_margin_num = int(len(freq_dist_copy) * freq_margin)
-        item_id_to_choice = np.argsort(freq_dist_copy)[-freq_margin_num:]
-        freq_dist_copy = freq_dist_copy[item_id_to_choice]
-        freq_dist_copy = freq_dist_copy / freq_dist_copy.sum()
-        n_samples = neg_per_sample * len(pos_item_ids)
+        n_samples = neg_per_sample * len(set(pos_item_ids))
+
         try:
             return np.random.choice(
-                item_id_to_choice, size=n_samples, replace=False, p=freq_dist_copy
+                item_id_to_choice, size=n_samples, replace=False, p=freq_dist
             ).tolist()
         except ValueError:
             print(item_id_to_choice.shape, n_samples)
@@ -335,17 +328,27 @@ class DualEncoderDatasets:
         self, freq_margin: float, neg_per_sample: int
     ) -> list[list[int]]:
         freq_dist, pos_interactions = self.make_pos_distributions(self.interactions)
-        with ThreadPoolExecutor() as pool:
-            pos_neg_interactions = list(
-                pool.map(
-                    lambda tup: (
-                        tup[0],
-                        tup[1],
-                        self.neg_choice(freq_dist, tup[1], freq_margin, neg_per_sample),
+        freq_dist = np.lg(freq_dist)
+        freq_margin_num = int(len(freq_dist) * freq_margin)
+        item_id_to_choice = np.argsort(freq_dist)[-freq_margin_num:]
+        freq_dist = freq_dist[item_id_to_choice]
+        freq_dist = freq_dist / freq_dist.sum()
+
+        pos_neg_interactions = list(
+            map(
+                lambda tup: (
+                    tup[0],
+                    tup[1],
+                    self.neg_choice(
+                        freq_dist=freq_dist,
+                        pos_item_ids=tup[1],
+                        neg_per_sample=neg_per_sample,
+                        item_id_to_choice=item_id_to_choice,
                     ),
-                    pos_interactions.items(),
-                )
+                ),
+                pos_interactions.items(),
             )
+        )
         return pos_neg_interactions
 
     def create_dataset(
