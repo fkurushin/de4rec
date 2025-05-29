@@ -38,15 +38,15 @@ class TestML1M:
 
     def test_neg_choice(self, datasets):
         neg_item_ids = datasets.neg_choice(
-            freq_dist=np.array([1, 2, 3]),
+            freq_dist=np.array([0.3, 0.5, 0.2]),
             pos_item_ids=[
                 1,
             ],
-            freq_margin=1,
             neg_per_sample=1,
+            item_id_to_choice=np.array([0,1,2]),
         )
         assert len(neg_item_ids) == 1
-        assert neg_item_ids[0] in [0, 2]
+        assert neg_item_ids[0] in [0, 1, 2]
 
 
     def test_make_pos_distributions(self, datasets):

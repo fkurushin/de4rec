@@ -302,13 +302,9 @@ class DualEncoderDatasets:
         """
         n_samples = neg_per_sample * len(set(pos_item_ids))
 
-        try:
-            return np.random.choice(
+        return np.random.choice(
                 item_id_to_choice, size=n_samples, replace=False, p=freq_dist
             ).tolist()
-        except ValueError:
-            print(item_id_to_choice.shape, n_samples)
-            return [0] * n_samples
 
     def make_pos_distributions(
         self, interactions: list[tuple[int, int]]
