@@ -5,8 +5,7 @@ import evaluate
 import numpy as np
 import torch
 from tqdm import tqdm
-from transformers import (PretrainedConfig, PreTrainedModel, Trainer,
-                          TrainingArguments)
+from transformers import PretrainedConfig, PreTrainedModel, Trainer, TrainingArguments
 from transformers.modeling_outputs import ModelOutput
 from transformers.trainer_utils import EvalPrediction
 
@@ -328,7 +327,7 @@ class DualEncoderDatasets:
         self, freq_margin: float, neg_per_sample: int
     ) -> list[list[int]]:
         freq_dist, pos_interactions = self.make_pos_distributions(self.interactions)
-        freq_dist = np.lg(freq_dist)
+        freq_dist = np.log10(freq_dist)
         freq_margin_num = int(len(freq_dist) * freq_margin)
         item_id_to_choice = np.argsort(freq_dist)[-freq_margin_num:]
         freq_dist = freq_dist[item_id_to_choice]
@@ -356,9 +355,9 @@ class DualEncoderDatasets:
     ) -> list[list[int, int, int]]:
         dataset = []
         for user_id, pos_item_ids, neg_item_ids in tqdm(pos_neg_interactions):
-            for pos_item_id, neg_item_id in zip(pos_item_ids, neg_item_ids):
-                dataset.append((user_id, pos_item_id, 1))
-                dataset.append((user_id, neg_item_id, -1))
+            dataset += list(
+                map(lambda item_id: (user_id, item_id, 1), pos_item_ids)
+            ) + list(map(lambda item_id: (user_id, item_id, -1), neg_item_ids))
         return dataset
 
     def __train_eval_split(self, dataset: ListDataset) -> DualEncoderSplit:
