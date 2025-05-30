@@ -79,7 +79,7 @@ class TextEncoderConfig(PretrainedConfig):
         self,
         tokens_size: int = None,
         texts_size: int = None,
-        embedding_dim: int =None,
+        embedding_dim: int = None,
         margin: float = 0.85,
         **kwargs,
     ):

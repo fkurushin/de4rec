@@ -63,27 +63,24 @@ class TestS3Train:
         return data_dict
 
     @pytest.fixture
+    def users (self, data_dict : dict) -> list :
+        return data_dict.get("web_user_ids")
+
+    @pytest.fixture
     def datasets(self, data_dict: dict) -> DualEncoderDatasets:
-        users = list(
-            map(
-                lambda tu: (tu[0], str(tu[1])), enumerate(data_dict.get("web_user_ids"))
-            )
-        )
-        items = list(data_dict.get("search_texts").values())
+        
+        users_size = len(data_dict.get("web_user_ids")) 
+        items_size = len(data_dict.get("search_texts")) 
         interactions = []
         for user_id, item_ids in enumerate(data_dict.get("train_interactions")):
             for item_id in item_ids:
                 interactions.append((user_id, item_id))
 
-        return DualEncoderDatasets(interactions=interactions, users=users, items=items)
+        return DualEncoderDatasets(interactions=interactions,  users_size=users_size, items_size=items_size)
 
-    @pytest.fixture
-    def dataset_split(self, datasets: DualEncoderDatasets) -> DualEncoderSplit:
-        return datasets.split(freq_margin=0.15, neg_per_sample=3)
-
-    def test_datasets(self, dataset_split: DualEncoderSplit):
-        assert len(dataset_split.train_dataset) > 100
-        assert len(dataset_split.eval_dataset) > 100
+    def test_datasets(self, datasets: DualEncoderDatasets):
+        assert datasets.dataset_split.train_dataset.distinct_size() > 100
+        assert datasets.dataset_split.eval_dataset.distinct_size() > 100
 
     @pytest.fixture
     def model(self, datasets: DualEncoderDatasets) -> DualEncoderModel:
@@ -98,7 +95,7 @@ class TestS3Train:
         assert sum(p.numel() for p in model.parameters() if p.requires_grad) > 100_000
 
     def test_trainer(
-        self, dataset_split: DualEncoderSplit, model: DualEncoderModel, save_path
+        self, datasets: DualEncoderDatasets, model: DualEncoderModel, save_path
     ):
         training_arguments = DualEncoderTrainingArguments(
             logging_steps=10000,
@@ -111,19 +108,19 @@ class TestS3Train:
         trainer = DualEncoderTrainer(
             model=model,
             training_arguments=training_arguments,
-            dataset_split=dataset_split,
+            dataset_split=datasets.dataset_split,
         )
         trainer.train()
         trainer.save_model(save_path)
 
         assert trainer
 
-    def test_recom_sample(self, model: DualEncoderModel, datasets: DualEncoderDatasets):
+    def test_recom_sample(self, model: DualEncoderModel, datasets: DualEncoderDatasets, users : list):
         sample_num = 100
         model.eval()
         with torch.no_grad():
             inference = model.recommend_topk_by_user_ids(
-                user_ids=list(map(lambda tu: tu[0], datasets.users[:sample_num])),
+                user_ids= list(range(sample_num)),
                 top_k=5,
             )
 
@@ -143,13 +140,44 @@ class TestS3Train:
 
         recommender = DualEncoderRecommender(model=saved_model)
         inference = recommender.batch_recommend_topk_by_user_ids(
-            user_ids=list(map(lambda tu: tu[0], datasets.users)), top_k=5, batch_size=10_000
+            user_ids= list(range(datasets.users_size)), top_k=5, batch_size=10_000
         )
 
-        assert len(inference) == len(datasets.users)
+        assert len(inference) == datasets.users_size
 
         dill.dump(inference, open(save_path + "/inference.dill", "wb"))
         dill.dump(datasets, open(save_path + "/datasets.dill", "wb"))
 
     def test_upload(self, s3, bucket_name: str, model_key: str, save_path: str):
         assert s3.safe_upload_folder(save_path, bucket_name, model_key)
+
+
+class TestInference:
+
+    @pytest.fixture
+    def saved_model(self, save_path) -> DualEncoderModel:
+        return DualEncoderModel.from_pretrained(save_path)
+
+    def test_recom_for_unknown_users_batch(
+        self,
+        saved_model: DualEncoderModel,
+    ):
+
+        recommender = DualEncoderRecommender(model=saved_model)
+        inference = recommender.batch_recommend_topk_by_item_ids(
+            [
+                [1, 2, 3],
+                [4, 5, 6, 7],
+                [
+                    22,
+                ],
+                [
+                    33,
+                    44,
+                ],
+            ],
+            top_k=5,
+            batch_size=2,
+        )
+
+        assert len(inference) == 4        

@@ -1,3 +1,8 @@
-from .train import DualEncoderTrainer, DualEncoderConfig,  DualEncoderModel, DualEncoderDatasets, ListDataset, DualEncoderLoadData, DualEncoderTrainingArguments, DualEncoderSplit, DualEncoderRecommender
-from .text_encoder import TextEncoderConfig, TextEncoderModel, TextEncoderTrainingArguments, TextEncoderTrainer, TextEncoderTokenizer, TextEncoderDatasets
 from .s3_tools import *
+from .text_encoder import (TextEncoderConfig, TextEncoderDatasets,
+                           TextEncoderModel, TextEncoderTokenizer,
+                           TextEncoderTrainer, TextEncoderTrainingArguments)
+from .train import (DualEncoderConfig, DualEncoderDatasets, DualEncoderModel,
+                    DualEncoderRecommender, DualEncoderSplit,
+                    DualEncoderTrainer, DualEncoderTrainingArguments,
+                    ListDataset)

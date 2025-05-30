@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from de4rec import (
-    DualEncoderLoadData,
+    DualEncoderDatasets,
     DualEncoderConfig,
     DualEncoderModel,
     DualEncoderTrainer,
@@ -14,6 +14,37 @@ from de4rec import (
     DualEncoderRecommender
 )
 import torch
+
+class DualEncoderLoadData(DualEncoderDatasets):
+    def __init__(self, **kwargs):
+    
+        _interactions_path = kwargs.get(
+            "interactions_path", "dataset/ml-1m/ratings.dat"
+        )
+        assert _interactions_path
+        _interactions = self.load_list_of_int_int_from_path(_interactions_path)
+    
+        _users_size = max([tu[0] for tu in _interactions]) + 1
+        _items_size = max([tu[1] for tu in _interactions]) + 1
+        
+        super().__init__(
+            interactions=_interactions, users_size=_users_size, items_size=_items_size, freq_margin=1.0, neg_per_sample=1
+        )
+    
+    def load_list_of_int_int_from_path(
+        self, path: str, sep: str = "::"
+    ) -> list[tuple[int, int]]:
+        with open(path, "r", encoding="utf-8") as fn:
+            res = list(
+                map(
+                    lambda row: (int(row[0]), int(row[1])),
+                    map(
+                        lambda row: row.strip().split(sep)[:2],
+                        fn.read().strip().split("\n"),
+                    ),
+                )
+            )
+        return res
 
 class TestML1M:
     @pytest.fixture
@@ -34,43 +65,15 @@ class TestML1M:
     def test_datasets(self, datasets):
         assert datasets.items_size == 3953
         assert datasets.users_size == 6041
-
-
-    def test_neg_choice(self, datasets):
-        neg_item_ids = datasets.neg_choice(
-            freq_dist=np.array([0.3, 0.5, 0.2]),
-            pos_item_ids=[
-                1,
-            ],
-            neg_per_sample=1,
-            item_id_to_choice=np.array([0,1,2]),
-        )
-        assert len(neg_item_ids) == 1
-        assert neg_item_ids[0] in [0, 1, 2]
-
-
-    def test_make_pos_distributions(self, datasets):
-        freq_dist, pos_interactions = datasets.make_pos_distributions(datasets.interactions)
-        assert freq_dist.sum() > 3953
-        assert len(pos_interactions) >= 6040
-
-
-    @pytest.fixture
-    def dataset_split(self, datasets):
-        return datasets.split(freq_margin=1.0, neg_per_sample=1)
-
-
-    def test_run(self, dataset_split):
-        assert len(dataset_split.train_dataset) > 1
-        assert len(dataset_split.eval_dataset) > 1
-
+        assert datasets.dataset_split.train_dataset.distinct_size() > 1
+        assert datasets.dataset_split.eval_dataset.distinct_size() > 1
 
     def test_config(self, save_path):
         config = DualEncoderConfig(users_size=101, items_size=102, embedding_dim=32)
         config.save_pretrained(save_path)
 
 
-    def test_trainer(self, datasets, dataset_split, save_path):
+    def test_trainer(self, datasets, save_path):
         config = DualEncoderConfig(
             users_size=datasets.users_size,
             items_size=datasets.items_size,
@@ -86,7 +89,7 @@ class TestML1M:
         )
 
         trainer = DualEncoderTrainer(
-            model=model, training_arguments=training_arguments, dataset_split=dataset_split
+            model=model, training_arguments=training_arguments, dataset_split=datasets.dataset_split
         )
         trainer.train()
         trainer.save_model(save_path)
