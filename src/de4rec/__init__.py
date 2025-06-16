@@ -1,4 +1,3 @@
-from .s3_tools import *
 from .text_encoder import (TextEncoderConfig, TextEncoderDatasets,
                            TextEncoderModel, TextEncoderTokenizer,
                            TextEncoderTrainer, TextEncoderTrainingArguments)
