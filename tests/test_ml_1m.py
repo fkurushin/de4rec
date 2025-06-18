@@ -28,7 +28,7 @@ class DualEncoderLoadData(DualEncoderDatasets):
         _items_size = max([tu[1] for tu in _interactions]) + 1
         
         super().__init__(
-            interactions=_interactions, users_size=_users_size, items_size=_items_size, freq_margin=1.0, neg_per_sample=1
+            interactions=_interactions, users_size=_users_size, items_size=_items_size, freq_margin=0.1, neg_per_sample=1
         )
     
     def load_list_of_int_int_from_path(

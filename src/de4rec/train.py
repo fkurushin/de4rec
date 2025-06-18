@@ -335,29 +335,6 @@ class DualEncoderDatasets:
     ) -> int:
         return self._neg_per_sample
 
-    def __neg_choice(
-        self, args: tuple[int, list[int]]
-    ) -> tuple[int, tuple[int], tuple[int]]:
-        """
-        Input:
-        user_id , pos_item_ids
-
-        Return:
-        user_id , pos_item_ids, neg_item_ids
-        """
-
-        n_samples = self.neg_per_sample * len(set(args[1]))
-        return (
-            args[0],
-            args[1],
-            np.random.choice(
-                self.__negative_item_ids,
-                size=n_samples,
-                replace=False,
-                p=self.__negative_freq_dist,
-            ).tolist(),
-        )
-
     def __make_pos_distributions(
         self, interactions: list[tuple[int, int]]
     ) -> tuple[np.array, dict]:
@@ -378,13 +355,26 @@ class DualEncoderDatasets:
         _freq_dist, pos_interactions = self.__make_pos_distributions(interactions)
 
         freq_margin_num = int(len(_freq_dist) * self.freq_margin)
-        self.__negative_item_ids = np.argsort(_freq_dist)[-freq_margin_num:]
-        self.__negative_freq_dist = np.log10(_freq_dist[self.__negative_item_ids])
-        self.__negative_freq_dist /= self.__negative_freq_dist.sum()
+        negative_item_ids = np.argsort(_freq_dist)[
+            -freq_margin_num:
+        ]  # time consuming operation, do it once
 
-        for user_id, pos_item_ids, neg_item_ids in map(
-            self.__neg_choice, tqdm(pos_interactions.items())
-        ):
+        for user_id, pos_item_ids in tqdm(pos_interactions.items()):
+            user_negative_item_ids = np.setdiff1d(
+                negative_item_ids, np.array(pos_item_ids)
+            )
+
+            user_negative_freq_dist = np.log10(_freq_dist[user_negative_item_ids])
+            user_negative_freq_dist /= user_negative_freq_dist.sum()
+
+            #Cannot take a larger sample than population when 'replace=False'
+            n_samples = min(self.neg_per_sample * len(set(pos_item_ids)), len(user_negative_item_ids))
+            neg_item_ids = np.random.choice(
+                user_negative_item_ids,
+                size=n_samples,
+                replace=False,
+                p=user_negative_freq_dist,
+            )
             for item_id in pos_item_ids:
                 yield (user_id, item_id, 1)
             for item_id in neg_item_ids:
