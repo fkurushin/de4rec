@@ -3,10 +3,10 @@ from typing import Iterable, Optional
 
 import evaluate
 import numpy as np
+import scipy
 import torch
 from tqdm import tqdm
-from transformers import (PretrainedConfig, PreTrainedModel, Trainer,
-                          TrainingArguments)
+from transformers import PretrainedConfig, PreTrainedModel, Trainer, TrainingArguments
 from transformers.modeling_outputs import ModelOutput
 from transformers.trainer_utils import EvalPrediction
 
@@ -297,12 +297,13 @@ class DualEncoderDatasets:
         self._freq_margin = freq_margin
         self._neg_per_sample = neg_per_sample
 
-        self.__negative_freq_dist: np.array = None
-        self.__negative_item_ids: np.array = None
+        # Always convert list to sparse matrix
+        self.interactions = self.__list_to_sparse(interactions)
+        print(f"Sparse matrix shape: {self.interactions.shape}")
 
-        self.__approximate_dataset_size = len(interactions) * (neg_per_sample + 1)
+        # self.__approximate_dataset_size = self.interactions.nnz * (neg_per_sample + 1)
         self.__dataset_split: DualEncoderSplit = self.__train_eval_split(
-            self.__add_negative_samples(interactions)
+            self.__add_negative_samples(self.interactions)
         )
 
     @property
@@ -335,62 +336,106 @@ class DualEncoderDatasets:
     ) -> int:
         return self._neg_per_sample
 
-    def __make_pos_distributions(
+    def __list_to_sparse(
         self, interactions: list[tuple[int, int]]
-    ) -> tuple[np.array, dict]:
-        freq_dist = np.ones(self.items_size)
-        pos_interactions = {}
-        for user_id, item_id in interactions:
-            freq_dist[item_id] = freq_dist[item_id] + 1
-            pos_interactions[user_id] = pos_interactions.get(user_id, []) + [
-                item_id,
-            ]
+    ) -> scipy.sparse.csr_matrix:
+        """
+        Convert list of interactions to sparse matrix.
+        Maps original user/item IDs to sequential indices for embedding table.
+        Return:
+            scipy.sparse.csr_matrix
+        """
+        if not interactions:
+            return scipy.sparse.csr_matrix((0, 0))
+            
+        interactions = np.array(interactions)
+        user_ids = interactions[:, 0]
+        item_ids = interactions[:, 1]
+        data = np.ones(len(interactions))
 
-        return freq_dist, pos_interactions
+        # Map original IDs to sequential indices (0, 1, 2, ...)
+        unique_users = np.unique(user_ids)
+        unique_items = np.unique(item_ids)
+        
+        self._uid2sid = {user_id: i for i, user_id in enumerate(unique_users)}
+        self._iid2sid = {item_id: i for i, item_id in enumerate(unique_items)}
+
+        # Convert to sequential indices
+        user_indices = np.array([self._uid2sid[user_id] for user_id in user_ids])
+        item_indices = np.array([self._iid2sid[item_id] for item_id in item_ids])
+
+        # Create sparse matrix with shape based on unique users/items
+        return scipy.sparse.csr_matrix(
+            (data, (user_indices, item_indices)), 
+            shape=(len(unique_users), len(unique_items))
+        )
+    
+    def __make_freq_dist(self, interactions: scipy.sparse.csr_matrix) -> np.array:
+        return interactions.sum(axis=0).A.ravel()
 
     def __add_negative_samples(
-        self, interactions: list[tuple[int, int]]
-    ) -> Iterable[tuple[int, int, int]]:
-
-        _freq_dist, pos_interactions = self.__make_pos_distributions(interactions)
-
-        freq_margin_num = int(len(_freq_dist) * self.freq_margin)
-        negative_item_ids = np.argsort(_freq_dist)[
-            -freq_margin_num:
-        ]  # time consuming operation, do it once
-
-        for user_id, pos_item_ids in tqdm(pos_interactions.items()):
-            user_negative_item_ids = np.setdiff1d(
-                negative_item_ids, np.array(pos_item_ids)
-            )
-
-            user_negative_freq_dist = np.log10(_freq_dist[user_negative_item_ids])
-            user_negative_freq_dist /= user_negative_freq_dist.sum()
-
-            #Cannot take a larger sample than population when 'replace=False'
-            n_samples = min(self.neg_per_sample * len(set(pos_item_ids)), len(user_negative_item_ids))
-            neg_item_ids = np.random.choice(
-                user_negative_item_ids,
-                size=n_samples,
-                replace=False,
-                p=user_negative_freq_dist,
-            )
-            for item_id in pos_item_ids:
-                yield (user_id, item_id, 1)
-            for item_id in neg_item_ids:
-                yield (user_id, item_id, -1)
+        self, interactions: scipy.sparse.csr_matrix
+    ) -> list[tuple[int, int, int]]:
+        """
+        Efficient vectorized negative sampling.
+        """
+        # 1. Calculate number of negative samples needed per user
+        pos_per_user = interactions.sum(axis=1).A.ravel()
+        neg_per_user = pos_per_user * self.neg_per_sample
+        total_neg_samples = int(neg_per_user.sum())
+        
+        # 2. Get frequency distribution for negative sampling
+        freq_dist = self.__make_freq_dist(interactions)
+        freq_margin_num = int(len(freq_dist) * self.freq_margin)
+        negative_item_ids = np.argsort(freq_dist)[-freq_margin_num:]
+        
+        neg_freq_dist = freq_dist[negative_item_ids]
+        neg_freq_dist = neg_freq_dist / neg_freq_dist.sum()
+        
+        # 3. Generate random negative item IDs
+        sampled_neg_items = np.random.choice(
+            negative_item_ids,
+            size=total_neg_samples,
+            p=neg_freq_dist
+        )
+        
+        # 4. Create user indices for negative samples
+        user_indices = np.repeat(np.arange(self.users_size), neg_per_user.astype(int))
+        
+        # 5. Create negative samples sparse matrix
+        negative_interactions = scipy.sparse.csr_matrix(
+            (np.ones(len(user_indices)), (user_indices, sampled_neg_items)),
+            shape=(self.users_size, self.items_size)
+        )
+        
+        # 6. Subtract positive interactions from negative (remove collisions)
+        negative_interactions = negative_interactions - interactions
+        negative_interactions.data = np.maximum(negative_interactions.data, 0)
+        
+        # 7. Convert to final format using sparse matrix attributes
+        # Positive samples: label = 1
+        pos_users, pos_items = interactions.nonzero()
+        pos_labels = np.ones(len(pos_users), dtype=int)
+        
+        # Negative samples: label = -1
+        neg_users, neg_items = negative_interactions.nonzero()
+        neg_labels = -np.ones(len(neg_users), dtype=int)
+        
+        # Combine all samples
+        all_users = np.concatenate([pos_users, neg_users])
+        all_items = np.concatenate([pos_items, neg_items])
+        all_labels = np.concatenate([pos_labels, neg_labels])
+        
+        # Convert to list of tuples in one go
+        return list(zip(all_users, all_items, all_labels))
 
     def __train_eval_split(
-        self, dataset: Iterable[tuple[int, int, int]]
+        self, dataset: list[tuple[int, int, int]]
     ) -> DualEncoderSplit:
 
-        eval_dataset_size = self.__approximate_dataset_size // 20.0  # 5%
-        eval_dataset, train_dataset = [], []
-        for idx, tup in enumerate(dataset):
-            if idx < eval_dataset_size:
-                eval_dataset.append(tup)
-            else:
-                train_dataset.append(tup)
+        eval_dataset_size = len(dataset) // 20  # 5%
+        eval_dataset = dataset[:eval_dataset_size]
+        train_dataset = dataset[eval_dataset_size:]
 
         return DualEncoderSplit(ListDataset(train_dataset), ListDataset(eval_dataset))
 

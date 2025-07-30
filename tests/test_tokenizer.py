@@ -17,10 +17,6 @@ class TestTokenizer:
     def tokenizer(self) -> TextEncoderTokenizer:
         return TextEncoderTokenizer()
 
-    def test_tokenizer(
-        self, tokenizer, text
-    ):
-        vec  = tokenizer.fit_transform([text])
-        assert vec.shape == (1,2)
-
-
+    def test_tokenizer(self, tokenizer, text):
+        vec = tokenizer.fit_transform([text])
+        assert vec.shape == (1, 2)

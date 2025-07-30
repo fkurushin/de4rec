@@ -10,8 +10,7 @@ from scipy.sparse import csr_matrix
 from sklearn.feature_extraction.text import CountVectorizer
 from torch.nn.utils.rnn import pad_sequence
 from tqdm import tqdm
-from transformers import (PretrainedConfig, PreTrainedModel, Trainer,
-                          TrainingArguments)
+from transformers import PretrainedConfig, PreTrainedModel, Trainer, TrainingArguments
 from transformers.modeling_outputs import ModelOutput
 from transformers.trainer_utils import EvalPrediction
 

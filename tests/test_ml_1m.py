@@ -2,35 +2,39 @@ import sys
 
 sys.path.append("src")
 
-import numpy as np
 import pytest
+import torch
 
 from de4rec import (
-    DualEncoderDatasets,
     DualEncoderConfig,
+    DualEncoderDatasets,
     DualEncoderModel,
+    DualEncoderRecommender,
     DualEncoderTrainer,
     DualEncoderTrainingArguments,
-    DualEncoderRecommender
 )
-import torch
+
 
 class DualEncoderLoadData(DualEncoderDatasets):
     def __init__(self, **kwargs):
-    
+
         _interactions_path = kwargs.get(
             "interactions_path", "dataset/ml-1m/ratings.dat"
         )
         assert _interactions_path
         _interactions = self.load_list_of_int_int_from_path(_interactions_path)
-    
+
         _users_size = max([tu[0] for tu in _interactions]) + 1
         _items_size = max([tu[1] for tu in _interactions]) + 1
-        
+
         super().__init__(
-            interactions=_interactions, users_size=_users_size, items_size=_items_size, freq_margin=0.1, neg_per_sample=1
+            interactions=_interactions,
+            users_size=_users_size,
+            items_size=_items_size,
+            freq_margin=0.1,
+            neg_per_sample=1,
         )
-    
+
     def load_list_of_int_int_from_path(
         self, path: str, sep: str = "::"
     ) -> list[tuple[int, int]]:
@@ -46,21 +50,24 @@ class DualEncoderLoadData(DualEncoderDatasets):
             )
         return res
 
+
 class TestML1M:
     @pytest.fixture
-    def save_path(self,):
+    def save_path(
+        self,
+    ):
         return "./ml_1m/"
 
-
     @pytest.fixture
-    def datasets(self,):
+    def datasets(
+        self,
+    ):
         datasets = DualEncoderLoadData(
             interactions_path="dataset/ml-1m/ratings.dat",
             users_path="dataset/ml-1m/users.dat",
             items_path="dataset/ml-1m/movies.dat",
         )
         return datasets
-
 
     def test_datasets(self, datasets):
         assert datasets.items_size == 3953
@@ -71,7 +78,6 @@ class TestML1M:
     def test_config(self, save_path):
         config = DualEncoderConfig(users_size=101, items_size=102, embedding_dim=32)
         config.save_pretrained(save_path)
-
 
     def test_trainer(self, datasets, save_path):
         config = DualEncoderConfig(
@@ -89,19 +95,23 @@ class TestML1M:
         )
 
         trainer = DualEncoderTrainer(
-            model=model, training_arguments=training_arguments, dataset_split=datasets.dataset_split
+            model=model,
+            training_arguments=training_arguments,
+            dataset_split=datasets.dataset_split,
         )
         trainer.train()
         trainer.save_model(save_path)
         assert trainer
 
     @pytest.fixture
-    def model(self, save_path) -> DualEncoderModel: 
+    def model(self, save_path) -> DualEncoderModel:
         return DualEncoderModel.from_pretrained(save_path)
 
-    def test_recomm(self, model : DualEncoderModel, datasets):
+    def test_recomm(self, model: DualEncoderModel, datasets):
         assert sum(p.numel() for p in model.parameters() if p.requires_grad) > 1000
         sample = 30
         recommender = DualEncoderRecommender(model=model)
-        rec_items = recommender.batch_recommend_topk_by_user_ids(user_ids = list(range(sample)), top_k =  3, batch_size = 10)
+        rec_items = recommender.batch_recommend_topk_by_user_ids(
+            user_ids=list(range(sample)), top_k=3, batch_size=10
+        )
         assert len(rec_items) == sample
